@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 )
 
 type User struct {
@@ -55,6 +56,38 @@ func (this *User) SendMessage(msg string) {
 	this.conn.Write([]byte((msg)))
 }
 
+func (this *User) handleMessage(msg string) {
+	if msg == "who" {
+		this.server.mapLock.RLock()
+		for _, user := range this.server.OnlineUsers {
+			onlineMessage := "[" + user.Addr + "]" + user.Name + ": is online \n"
+			this.SendMessage(onlineMessage)
+		}
+		this.server.mapLock.RUnlock()
+	} else if strings.HasPrefix(msg, "rename|") {
+		splitted := strings.Split(msg, "|")
+		if len(splitted) != 2 {
+			this.SendMessage(fmt.Sprintf("Invalid command: %s", msg))
+			return
+		}
+
+		this.server.mapLock.Lock()
+		defer this.server.mapLock.Unlock()
+		_, ok := this.server.OnlineUsers[splitted[1]]
+		if ok {
+			this.SendMessage(fmt.Sprintf("User name %s already exists\n", splitted[1]))
+		} else {
+			originalName := this.Name
+			this.Name = splitted[1]
+			this.server.OnlineUsers[this.Name] = this
+			delete(this.server.OnlineUsers, originalName)
+			this.SendMessage(fmt.Sprintf("User name has been updated from %s to %s\n", originalName, this.Name))
+		}
+	} else {
+		this.server.BroadCast(this, msg)
+	}
+}
+
 func (this *User) DoMessage() {
 	buff := make([]byte, 50)
 	for {
@@ -67,16 +100,7 @@ func (this *User) DoMessage() {
 			break
 		} else {
 			msg := string(buff[:length-1])
-			if msg == "who" {
-				this.server.mapLock.RLock()
-				for _, user := range this.server.OnlineUsers {
-					onlineMessage := "[" + user.Addr + "]" + user.Name + ": is online \n"
-					this.SendMessage(onlineMessage)
-				}
-				this.server.mapLock.RUnlock()
-			} else {
-				this.server.BroadCast(this, string(buff[:length-1]))
-			}
+			this.handleMessage(msg)
 		}
 	}
 }
