@@ -42,30 +42,10 @@ func (this *Server) BroadCast(user *User, message string) {
 }
 
 func (this *Server) Handler(conn net.Conn) {
-	this.mapLock.Lock()
-
-	user := NewUser(conn)
-
-	defer func() {
-		this.BroadCast(user, fmt.Sprintf("User: %s is offline", user.Name))
-		conn.Close()
-	}()
-
-	this.BroadCast(user, fmt.Sprintf("User: %s is online", user.Name))
-	this.OnlineUsers[user.Name] = user
-	this.mapLock.Unlock()
-
-	buff := make([]byte, 50)
-	for {
-		length, err := conn.Read(buff)
-		if err != nil {
-			// fmt.Println("Error: ", err)
-			break
-		} else {
-			this.BroadCast(user, string(buff[:length]))
-			// fmt.Printf("[%s]: %s", user.Name, string(buff[:length]))
-		}
-	}
+	defer conn.Close()
+	user := NewUser(conn, this)
+	user.Online()
+	user.DoMessage()
 }
 
 func (this *Server) Start() {
