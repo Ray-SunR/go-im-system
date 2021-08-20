@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"time"
 )
 
 type User struct {
@@ -13,6 +14,7 @@ type User struct {
 	Channel chan string
 	conn    net.Conn
 	server  *Server
+	isLive  chan bool
 }
 
 func NewUser(conn net.Conn, server *Server) *User {
@@ -23,11 +25,23 @@ func NewUser(conn net.Conn, server *Server) *User {
 		Channel: make(chan string),
 		conn:    conn,
 		server:  server,
+		isLive:  make(chan bool),
 	}
 
+	go user.startTimer()
 	go user.ListenMessage()
 
 	return user
+}
+
+func (this *User) startTimer() {
+	for {
+		select {
+		case <-this.isLive:
+		case <-time.After(5 * time.Second):
+			this.Kick()
+		}
+	}
 }
 
 func (this *User) ListenMessage() {
@@ -36,6 +50,16 @@ func (this *User) ListenMessage() {
 
 		this.conn.Write([]byte(msg + "\n"))
 	}
+}
+
+func (this *User) Kick() {
+	this.server.mapLock.Lock()
+	defer this.server.mapLock.Unlock()
+	this.SendMessage("Your session has expired...\n")
+	this.conn.Close()
+	close(this.Channel)
+	close(this.isLive)
+	delete(this.server.OnlineUsers, this.Name)
 }
 
 func (this *User) Online() {
@@ -92,6 +116,9 @@ func (this *User) DoMessage() {
 	buff := make([]byte, 50)
 	for {
 		length, err := this.conn.Read(buff)
+		if length != 0 {
+			this.isLive <- true
+		}
 		if length == 0 {
 			this.Offline()
 			break
