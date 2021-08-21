@@ -38,7 +38,7 @@ func (this *User) startTimer() {
 	for {
 		select {
 		case <-this.isLive:
-		case <-time.After(5 * time.Second):
+		case <-time.After(5 * time.Minute):
 			this.Kick()
 		}
 	}
@@ -83,11 +83,11 @@ func (this *User) SendMessage(msg string) {
 func (this *User) handleMessage(msg string) {
 	if msg == "who" {
 		this.server.mapLock.RLock()
+		defer this.server.mapLock.RUnlock()
 		for _, user := range this.server.OnlineUsers {
 			onlineMessage := "[" + user.Addr + "]" + user.Name + ": is online \n"
 			this.SendMessage(onlineMessage)
 		}
-		this.server.mapLock.RUnlock()
 	} else if strings.HasPrefix(msg, "rename|") {
 		splitted := strings.Split(msg, "|")
 		if len(splitted) != 2 {
@@ -106,6 +106,23 @@ func (this *User) handleMessage(msg string) {
 			this.server.OnlineUsers[this.Name] = this
 			delete(this.server.OnlineUsers, originalName)
 			this.SendMessage(fmt.Sprintf("User name has been updated from %s to %s\n", originalName, this.Name))
+		}
+	} else if strings.HasPrefix(msg, "chat|") {
+		splitted := strings.Split(msg, "|")
+		if len(splitted) != 3 {
+			this.SendMessage(fmt.Sprintf("Command %s is invalid, please enter in this format 'chat|user|message'", msg))
+			return
+		}
+
+		toUser := splitted[1]
+		toMsg := splitted[2]
+		this.server.mapLock.RLock()
+		defer this.server.mapLock.RUnlock()
+		user, ok := this.server.OnlineUsers[toUser]
+		if !ok {
+			this.SendMessage(fmt.Sprintf("User %s does not exsit\n", toUser))
+		} else {
+			user.SendMessage(fmt.Sprintf("%s: %s\n", this.Name, toMsg))
 		}
 	} else {
 		this.server.BroadCast(this, msg)
